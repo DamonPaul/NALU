@@ -35,7 +35,7 @@ class NALU(Layer):
         W = K.tanh(self.W_hat) * K.sigmoid(self.M_hat)
         m = K.exp(K.dot(K.log(K.abs(inputs) + 1e-7), W))
         g = K.sigmoid(K.dot(inputs, self.G))
-        a = K.dot(x, W)
+        a = K.dot(inputs, W)
         output = g * a + (1 - g) * m
         return output
 
