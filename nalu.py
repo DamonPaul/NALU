@@ -1,6 +1,5 @@
 import numpy as np
 import keras.backend as K
-import tensorflow as tf
 from keras.layers import *
 from keras.initializers import RandomNormal
 from keras.models import *
@@ -86,6 +85,11 @@ def get_data(N, op):
 
 if __name__ == "__main__":
     m = nalu_model()
-    m.compile("adam", "mse", metrics=["mae"])
+    m.compile("rmsprop", "mse", metrics=["mae"])
     (trX, trY), (teX, teY) = get_data(2 ** 16, lambda a, b: a + b)
-    m.fit(trX, trY, validation_data=(teX, teY), batch_size=1024, epochs=400)
+    K.set_value(m.optimizer.lr, 1e-2)
+    m.fit(trX, trY, validation_data=(teX, teY), batch_size=1024, epochs=200)
+    K.set_value(m.optimizer.lr, 1e-3)
+    m.fit(trX, trY, validation_data=(teX, teY), batch_size=1024, epochs=200)
+    K.set_value(m.optimizer.lr, 1e-4)
+    m.fit(trX, trY, validation_data=(teX, teY), batch_size=1024, epochs=200)
