@@ -1,7 +1,7 @@
 import numpy as np
 import keras.backend as K
 from keras.layers import *
-from keras.initializers import RandomNormal
+from keras.initializers import *
 from keras.models import *
 
 class NALU(Layer):
@@ -42,7 +42,7 @@ class NALU(Layer):
             output = a
         elif self.mode == "NALU":
             m = K.exp(K.dot(K.log(K.abs(inputs) + 1e-7), W))
-            g = K.sigmoid(K.dot(inputs, self.G))
+            g = K.sigmoid(K.dot(K.abs(inputs), self.G))
             output = g * a + (1 - g) * m
         else:
             raise ValueError("Valid modes: 'NAC', 'NALU'.")
@@ -65,10 +65,14 @@ class NALU(Layer):
         base_config = super(Dense, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-def nalu_model():
+def nalu_model(mode=NALU):
     x = Input((100,))
-    y = NALU(2, mode="NAC", MW_initializer=RandomNormal(stddev=1))(x)
-    y = NALU(1, mode="NAC", MW_initializer=RandomNormal(stddev=1))(y)
+    y = NALU(2, mode=mode, 
+             MW_initializer=RandomNormal(stddev=1),
+             G_initializer=Constant(10))(x)
+    y = NALU(1, mode=mode, 
+             MW_initializer=RandomNormal(stddev=1),
+             G_initializer=Constant(10))(y)
     return Model(x, y)
 
 def mlp_model():
@@ -79,7 +83,7 @@ def mlp_model():
 
 def get_data(N, op):
     split = 45
-    trX = np.random.normal(0, 1, (N, 100))
+    trX = np.random.normal(0, 0.5, (N, 100))
     a = trX[:, :split].sum(1)
     b = trX[:, split:].sum(1)
     print(a.min(), a.max(), b.min(), b.max())
@@ -92,9 +96,9 @@ def get_data(N, op):
     return (trX, trY), (teX, teY)
 
 if __name__ == "__main__":
-    m = nalu_model()
+    m = nalu_model("NALU")
     m.compile("rmsprop", "mse", metrics=["mae"])
-    (trX, trY), (teX, teY) = get_data(2 ** 16, lambda a, b: a + b)
+    (trX, trY), (teX, teY) = get_data(2 ** 16, lambda a, b: a - b)
     K.set_value(m.optimizer.lr, 1e-2)
     m.fit(trX, trY, validation_data=(teX, teY), batch_size=1024, epochs=200)
     K.set_value(m.optimizer.lr, 1e-3)
