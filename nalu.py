@@ -2,16 +2,19 @@ import numpy as np
 import keras.backend as K
 import tensorflow as tf
 from keras.layers import *
+from keras.initializers import RandomNormal
 from keras.models import *
 
 class NALU(Layer):
-    def __init__(self, units, kernel_initializer='glorot_uniform',
+    def __init__(self, units, MW_initializer='glorot_uniform',
+                 G_initializer='glorot_uniform',
                  **kwargs):
         if 'input_shape' not in kwargs and 'input_dim' in kwargs:
             kwargs['input_shape'] = (kwargs.pop('input_dim'),)
         super(NALU, self).__init__(**kwargs)
         self.units = units
-        self.kernel_initializer = initializers.get(kernel_initializer)
+        self.MW_initializer = initializers.get(MW_initializer)
+        self.G_initializer = initializers.get(G_initializer)
         self.input_spec = InputSpec(min_ndim=2)
         self.supports_masking = True
 
@@ -20,13 +23,13 @@ class NALU(Layer):
         input_dim = input_shape[-1]
 
         self.W_hat = self.add_weight(shape=(input_dim, self.units),
-                                     initializer=self.kernel_initializer,
+                                     initializer=self.MW_initializer,
                                      name='W_hat')
         self.M_hat = self.add_weight(shape=(input_dim, self.units),
-                                     initializer=self.kernel_initializer,
+                                     initializer=self.MW_initializer,
                                      name='M_hat')
         self.G = self.add_weight(shape=(input_dim, self.units),
-                                 initializer=self.kernel_initializer,
+                                 initializer=self.G_initializer,
                                  name='G')
         self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
         self.built = True
@@ -49,15 +52,40 @@ class NALU(Layer):
     def get_config(self):
         config = {
             'units': self.units,
-            'kernel_initializer': initializers.serialize(self.kernel_initializer)
+            'MW_initializer': initializers.serialize(self.MW_initializer),
+            'G_initializer':  initializers.serialize(self.G_initializer)
         }
         base_config = super(Dense, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+def nalu_model():
+    x = Input((100,))
+    y = NALU(2, MW_initializer=RandomNormal(stddev=1))(x)
+    y = NALU(1, MW_initializer=RandomNormal(stddev=1))(y)
+    return Model(x, y)
+
+def mlp_model():
+    x = Input((100,))
+    y = Dense(2, activation="relu")(x)
+    y = Dense(1)(y)
+    return Model(x, y)
+
+def get_data(N, op):
+    split = np.random.randint(100)
+    trX = np.random.normal(0, 0.5, (N, 100))
+    a = trX[:, :split].sum(1)
+    b = trX[:, split:].sum(1)
+    print(a.min(), a.max(), b.min(), b.max())
+    trY = op(a, b)[:, None]
+    teX = np.random.normal(0, 1, (N, 100))
+    a = teX[:, :split].sum(1)
+    b = teX[:, split:].sum(1)
+    print(a.min(), a.max(), b.min(), b.max())
+    teY = op(a, b)[:, None]
+    return (trX, trY), (teX, teY)
+
 if __name__ == "__main__":
-    x = Input((10,))
-    y = NALU(1)(x)
-    m = Model(x, y)
-    m.compile("adam", "mse")
-    m.fit(np.random.rand(128, 10), np.random.rand(128, 1), 
-          batch_size=128, epochs=2000)
+    m = nalu_model()
+    m.compile("adam", "mse", metrics=["mae"])
+    (trX, trY), (teX, teY) = get_data(2 ** 16, lambda a, b: a + b)
+    m.fit(trX, trY, validation_data=(teX, teY), batch_size=1024, epochs=400)
