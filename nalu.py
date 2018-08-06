@@ -6,12 +6,13 @@ from keras.models import *
 
 class NALU(Layer):
     def __init__(self, units, MW_initializer='glorot_uniform',
-                 G_initializer='glorot_uniform',
+                 G_initializer='glorot_uniform', mode="NALU",
                  **kwargs):
         if 'input_shape' not in kwargs and 'input_dim' in kwargs:
             kwargs['input_shape'] = (kwargs.pop('input_dim'),)
         super(NALU, self).__init__(**kwargs)
         self.units = units
+        self.mode = mode
         self.MW_initializer = initializers.get(MW_initializer)
         self.G_initializer = initializers.get(G_initializer)
         self.input_spec = InputSpec(min_ndim=2)
@@ -27,18 +28,24 @@ class NALU(Layer):
         self.M_hat = self.add_weight(shape=(input_dim, self.units),
                                      initializer=self.MW_initializer,
                                      name='M_hat')
-        self.G = self.add_weight(shape=(input_dim, self.units),
-                                 initializer=self.G_initializer,
-                                 name='G')
+        if self.mode == "NALU":
+            self.G = self.add_weight(shape=(input_dim, self.units),
+                                     initializer=self.G_initializer,
+                                     name='G')
         self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
         self.built = True
 
     def call(self, inputs):
         W = K.tanh(self.W_hat) * K.sigmoid(self.M_hat)
-        m = K.exp(K.dot(K.log(K.abs(inputs) + 1e-7), W))
-        g = K.sigmoid(K.dot(inputs, self.G))
         a = K.dot(inputs, W)
-        output = g * a + (1 - g) * m
+        if self.mode == "NAC":
+            output = a
+        elif self.mode == "NALU":
+            m = K.exp(K.dot(K.log(K.abs(inputs) + 1e-7), W))
+            g = K.sigmoid(K.dot(inputs, self.G))
+            output = g * a + (1 - g) * m
+        else:
+            raise ValueError("Valid modes: 'NAC', 'NALU'.")
         return output
 
     def compute_output_shape(self, input_shape):
@@ -51,6 +58,7 @@ class NALU(Layer):
     def get_config(self):
         config = {
             'units': self.units,
+            'mode' : self.mode,
             'MW_initializer': initializers.serialize(self.MW_initializer),
             'G_initializer':  initializers.serialize(self.G_initializer)
         }
@@ -59,8 +67,8 @@ class NALU(Layer):
 
 def nalu_model():
     x = Input((100,))
-    y = NALU(2, MW_initializer=RandomNormal(stddev=1))(x)
-    y = NALU(1, MW_initializer=RandomNormal(stddev=1))(y)
+    y = NALU(2, mode="NAC", MW_initializer=RandomNormal(stddev=1))(x)
+    y = NALU(1, mode="NAC", MW_initializer=RandomNormal(stddev=1))(y)
     return Model(x, y)
 
 def mlp_model():
@@ -70,13 +78,13 @@ def mlp_model():
     return Model(x, y)
 
 def get_data(N, op):
-    split = np.random.randint(100)
-    trX = np.random.normal(0, 0.5, (N, 100))
+    split = 45
+    trX = np.random.normal(0, 1, (N, 100))
     a = trX[:, :split].sum(1)
     b = trX[:, split:].sum(1)
     print(a.min(), a.max(), b.min(), b.max())
     trY = op(a, b)[:, None]
-    teX = np.random.normal(0, 1, (N, 100))
+    teX = np.random.normal(0, 2, (N, 100))
     a = teX[:, :split].sum(1)
     b = teX[:, split:].sum(1)
     print(a.min(), a.max(), b.min(), b.max())
